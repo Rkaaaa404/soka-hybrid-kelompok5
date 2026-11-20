@@ -1,0 +1,109 @@
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import type { AlgoId, MetricKey } from '../data/types';
+import { Evaluator } from '../sim/evaluator';
+import { DEFAULT_LAB_PARAMS, runHmmga, type HmmgaRun } from '../sim/hmmga';
+import { TASKS, VMS, planStats } from './model';
+
+export interface GaView {
+  gen: number;
+  /** step inside the generation, index into GA_PHASES (4 = the finished generation) */
+  phase: number;
+}
+
+export interface ArenaView {
+  scale: number;
+  mode: 'makespan' | MetricKey;
+  algos: AlgoId[];
+}
+
+/** What the 3D world shows. Each chapter panel sets the parts it cares about. */
+export interface Scene {
+  plan: number[]; // VM per task, -1 = order still waiting on the board
+  focusTask: number | null;
+  focusVm: number | null;
+  interactive: boolean;
+  ga: GaView | null;
+  arena: ArenaView;
+  celebrate: boolean;
+}
+
+interface Kitchen {
+  chapter: number;
+  go: (n: number) => void;
+  seed: number;
+  setSeed: (s: number) => void;
+  run: HmmgaRun;
+  ev: Evaluator;
+  scene: Scene;
+  setScene: (patch: Partial<Scene>) => void;
+  selected: number | null;
+  setSelected: (t: number | null) => void;
+  stats: ReturnType<typeof planStats>;
+  panelOpen: boolean;
+  setPanelOpen: (open: boolean) => void;
+  panelSize: PanelSize;
+  setPanelSize: (s: PanelSize) => void;
+}
+
+export type PanelSize = 'normal' | 'large' | 'full';
+
+const Ctx = createContext<Kitchen | null>(null);
+
+export const CHAPTER_COUNT = 9;
+
+function readHash(): number {
+  const m = /bab-(\d+)/.exec(window.location.hash);
+  const n = m ? Number(m[1]) - 1 : 0;
+  return Math.min(Math.max(n, 0), CHAPTER_COUNT - 1);
+}
+
+const ALL_ALGOS: AlgoId[] = ['HMMGA', 'HSO', 'PHS', 'CSA', 'MinMin', 'MaxMin', 'SJF', 'FCFS', 'RR'];
+
+export function KitchenProvider({ children }: { children: ReactNode }) {
+  const [chapter, setChapter] = useState(readHash);
+  const [seed, setSeed] = useState(42);
+  const run = useMemo(() => runHmmga(TASKS, VMS, { ...DEFAULT_LAB_PARAMS, seed }), [seed]);
+  const ev = useMemo(() => new Evaluator(TASKS, VMS, run.taskOrder), [run]);
+  const [scene, setSceneState] = useState<Scene>(() => ({
+    plan: run.best,
+    focusTask: null,
+    focusVm: null,
+    interactive: false,
+    ga: null,
+    arena: { scale: 5000, mode: 'makespan', algos: ALL_ALGOS },
+    celebrate: false,
+  }));
+  const [selected, setSelected] = useState<number | null>(null);
+  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelSize, setPanelSize] = useState<PanelSize>('normal');
+
+  const setScene = useCallback((patch: Partial<Scene>) => setSceneState((s) => ({ ...s, ...patch })), []);
+  const go = useCallback((n: number) => {
+    const next = Math.min(Math.max(n, 0), CHAPTER_COUNT - 1);
+    setChapter(next);
+    setSelected(null);
+    history.replaceState(null, '', `#bab-${next + 1}`);
+  }, []);
+
+  useEffect(() => {
+    const onHash = () => setChapter(readHash());
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
+  const stats = useMemo(() => planStats(ev, scene.plan), [ev, scene.plan]);
+
+  const value = useMemo<Kitchen>(
+    () => ({ chapter, go, seed, setSeed, run, ev, scene, setScene, selected, setSelected, stats, panelOpen, setPanelOpen, panelSize, setPanelSize }),
+    [chapter, go, seed, run, ev, scene, setScene, selected, stats, panelOpen, panelSize],
+  );
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+export function useKitchen(): Kitchen {
+  const k = useContext(Ctx);
+  if (!k) throw new Error('useKitchen outside KitchenProvider');
+  return k;
+}
+
+export { ALL_ALGOS };
