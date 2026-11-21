@@ -96,15 +96,23 @@ Catatan adaptasi:
 Isi 9 bab:
 1. **Sambutan**: peta konsep dan daftar tim.
 2. **Seleksi**: HSO vs HMMGA di panggung kompetisi, dengan sitasi. HMMGA menang di makespan, jadi HMMGA yang dipresentasikan.
-3. **Dapur**: tantangan interaktif. Klik rantang, lalu klik kompor koki untuk memindahkan pesanan, dan coba samai HMMGA.
-4. **Max-Min**: manajer mengambil pesanan terberat lebih dulu dan memberikannya ke koki yang paling cepat selesai (step/play).
-5. **GA**: ruang rencana berisi kartu jadwal (kromosom) yang diurutkan menurut fitness, roda roulette, meja persilangan two-point dengan animasi mutasi, mahkota elit, dan Pc/Pm adaptif.
-6. **Migrasi**: koki overload (bendera merah, kompor berasap) mengoper pesanan. Bab ini membandingkan jadwal Max-Min, jadwal setelah migrasi, dan hasil akhir.
+3. **Dapur**: tantangan interaktif. Klik rantang, lalu klik kompor koki untuk memindahkan pesanan, dan coba samai HMMGA. Isinya:
+   - papan skor satu sumbu: Round Robin, Max-Min, HMMGA, batas tercepat, dan penanda "Dapur sekarang" beserta asal jadwalnya
+   - garis target HMMGA
+   - tombol **Petunjuk**, yang mencari pindahan terbaik dari koki bendera merah
+   - tombol **Putar waktu**, yang memutar ulang dapur dari detik 0 sehingga menara tumbuh dan garis makespan muncul di akhir
+4. **Max-Min**: manajer mengambil pesanan terberat lebih dulu dan memberikannya ke koki yang paling cepat selesai (step/play). Bab 4–6 diawali peta alur HMMGA: Max-Min → GA → migrasi.
+5. **GA**: ruang rencana berisi kartu jadwal (kromosom) yang diurutkan menurut fitness, roda roulette, meja persilangan two-point dengan animasi mutasi, dan mahkota elit. Pendukungnya:
+   - kotak istilah dan "resep satu generasi" (1 elit + 4 salinan roulette + 7 anak)
+   - rumus Pc/Pm adaptif dengan nilai aktual
+   - sorotan yang juga mengikuti kartu klon dan salinan
+   - tombol lompat ke generasi pemecah rekor
+6. **Migrasi**: koki overload (bendera merah, kompor berasap) mengoper pesanan. Migrasi adalah langkah di setiap generasi, bukan tahap setelah GA. Bab ini membandingkan jadwal Max-Min, jadwal setelah migrasi, dan hasil akhir.
 7. **Kompetisi**: hasil CloudSim 50 VM sebagai menara rantang (makespan ÷ batas bawah), plus chart makespan dan tabel PIR.
 8. **Trade-off**: menara berganti metrik, ditambah heatmap dan scatter scheduling time.
 9. **Kesimpulan**: temuan, catatan jujur, dan referensi.
 
-Dapur demo memakai 30 task GoCJ (dataset 5000, baris 930–959) dan satu host. Simulasinya berjalan di browser dengan port JS HMMGA yang hasilnya identik dengan Java untuk seed yang sama. Batas tercepat dapur demo dihitung sebagai max(pesanan datang + porsi ÷ 2000 MIPS, total porsi sejak waktu t ÷ 13.000 MIPS) ≈ 190 s.
+Dapur demo memakai 30 task GoCJ (dataset 5000, baris 930–959) dan satu host. Simulasinya berjalan di browser dengan port JS HMMGA yang hasilnya identik dengan Java untuk seed yang sama. Seed default dapur adalah 44, karena di seed ini semua tahap HMMGA terlihat: Max-Min 227 s, migrasi gen 1 menjadi 215 s, lalu mutasi gen 3 menjadi 207 s. Di seed 42 dan 43, perbaikannya hanya datang dari migrasi. Hasil CloudSim tetap rata-rata seed 42–44. Batas tercepat dapur demo dihitung sebagai max(pesanan datang + porsi ÷ 2000 MIPS, total porsi sejak waktu t ÷ 13.000 MIPS) ≈ 190 s.
 
 Navigasi: ← / → atau `#bab-N`, seret untuk memutar, scroll untuk zoom. **H** menyembunyikan penjelasan; kontrol bab (putar/langkah, seed, tahap, skala, metrik) lalu pindah ke dock mengambang di atas navigasi supaya demo 3D tetap bisa dijalankan. **B** memperbesar panel dan teks, **F** membuka mode baca layar penuh (Esc kembali), dan tombol di kanan atas membuat browser layar penuh.
 
