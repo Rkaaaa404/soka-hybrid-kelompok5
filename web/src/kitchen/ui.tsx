@@ -76,7 +76,57 @@ export function SeedPicker() {
   );
 }
 
-export function Sparkline({ values, cursor, baseline, lb }: { values: number[]; cursor: number; baseline: number; lb: number }) {
+/** "Putar waktu": replays the schedule on the 3D kitchen so tower height reads as elapsed time. */
+export function TimePlay() {
+  const { playing, startPlayback, stopPlayback, stats } = useKitchen();
+  return (
+    <button className="btn play-btn" onClick={playing ? stopPlayback : startPlayback} disabled={stats.placements.length === 0} aria-pressed={playing}>
+      {playing ? '■ Hentikan' : '▶ Putar waktu'}
+    </button>
+  );
+}
+
+/** HMMGA as one flow, shown on the three algorithm chapters (Max-Min, GA, migration). */
+export function Pipeline({ active }: { active: 0 | 1 | 2 }) {
+  const { run, go } = useKitchen();
+  const G = run.generations.length - 1;
+  const steps = [
+    { n: '①', name: 'Max-Min', sub: `bibit · ${Math.round(run.maxMinMakespan)} s`, chapter: 3 },
+    { n: '②', name: 'GA', sub: `${G} generasi`, chapter: 4 },
+    { n: '③', name: 'Migrasi', sub: 'di tiap generasi', chapter: 5 },
+  ];
+  return (
+    <nav className="pipeline" aria-label="Alur HMMGA">
+      {steps.map((s, i) => (
+        <button key={s.name} className={i === active ? 'on' : undefined} aria-current={i === active ? 'step' : undefined} onClick={() => go(s.chapter)}>
+          <b>
+            {s.n} {s.name}
+          </b>
+          <span>{s.sub}</span>
+        </button>
+      ))}
+      <div className="pl-result">
+        <b>{Math.round(run.bestMakespan)} s</b>
+        <span>hasil HMMGA</span>
+      </div>
+    </nav>
+  );
+}
+
+export function Sparkline({
+  values,
+  cursor,
+  baseline,
+  lb,
+  marks = [],
+}: {
+  values: number[];
+  cursor: number;
+  baseline: number;
+  lb: number;
+  /** generations where the record dropped, with a short cause label */
+  marks?: { i: number; label: string }[];
+}) {
   const W = 400;
   const H = 120;
   const lo = Math.min(lb, ...values) * 0.97;
@@ -85,6 +135,7 @@ export function Sparkline({ values, cursor, baseline, lb }: { values: number[]; 
   const y = (v: number) => H - 16 - ((v - lo) / (hi - lo)) * (H - 30);
   return (
     <div className="chart spark">
+      <div className="spark-cap">Makespan kartu terbaik per generasi (makin rendah makin baik)</div>
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Makespan rencana terbaik per generasi">
         <line x1={10} x2={W - 10} y1={y(baseline)} y2={y(baseline)} stroke="#c3c2b7" strokeDasharray="4 4" />
         <text className="tick" x={W - 10} y={y(baseline) - 5} textAnchor="end">
@@ -95,6 +146,14 @@ export function Sparkline({ values, cursor, baseline, lb }: { values: number[]; 
           batas tercepat {Math.round(lb)} s
         </text>
         <path d={values.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y(v)}`).join('')} fill="none" stroke="#3987e5" strokeWidth={2} />
+        {marks.map((mk, j) => (
+          <g key={mk.i}>
+            <circle cx={x(mk.i)} cy={y(values[mk.i])} r={3.5} fill="#ffd166" />
+            <text className="tick" x={x(mk.i) + 6} y={y(values[mk.i]) + (j % 2 ? 14 : -7)} style={{ fill: '#ffd166' }}>
+              gen {mk.i}: {mk.label}
+            </text>
+          </g>
+        ))}
         <circle cx={x(cursor)} cy={y(values[cursor])} r={5} fill="#3987e5" stroke="#1a1a19" strokeWidth={2} />
         <text className="tick" x={10} y={H - 2}>
           gen 0

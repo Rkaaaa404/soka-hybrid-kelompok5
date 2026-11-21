@@ -29,7 +29,7 @@ export const DEFAULT_LAB_PARAMS: HmmgaParams = {
   k4: 0.5,
   crossoverShare: 0.6,
   migrationMoves: 20,
-  seed: 42,
+  seed: 44,
 };
 
 export type Origin = 'maxmin' | 'seeded' | 'random' | 'elite' | 'copy' | 'cross' | 'clone';
@@ -253,7 +253,8 @@ function migrate(ev: Evaluator, input: number[], threshold: number, maxMoves: nu
   return assign;
 }
 
-function candidateTasks(ev: Evaluator, ids: number[]): number[] {
+/** Orders migration tries to move off an overloaded VM: its 3 largest plus its 3 last. Exported for the migration chapter. */
+export function candidateTasks(ev: Evaluator, ids: number[]): number[] {
   const largest: number[] = [];
   const lens: number[] = [];
   for (const t of ids) {

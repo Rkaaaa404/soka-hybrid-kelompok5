@@ -31,25 +31,73 @@ export const ORIGIN: Record<string, string> = {
   clone: 'klon',
 };
 
-/** The child followed through generation g (its first crossover child) and its parents from generation g-1. */
-export function spotlight(gens: Generation[], g: number): { child: Individual; a: Individual; b: Individual; ia: number; ib: number } | null {
+/**
+ * How the followed card of generation g was made:
+ *  cross = two parents, crossover happened; clone = two parents, but the adaptive Pc said no (child = parent A);
+ *  copy = one card copied by roulette (the 40 % that skips crossover).
+ */
+export type SpotKind = 'cross' | 'clone' | 'copy';
+
+export interface Spot {
+  child: Individual;
+  a: Individual;
+  b: Individual;
+  ia: number;
+  ib: number;
+  kind: SpotKind;
+  /** this card set a new best-so-far makespan in generation g */
+  record: boolean;
+}
+
+const kindOf = (p: Individual): SpotKind | null => (p.origin === 'cross' && p.cut ? 'cross' : p.origin === 'clone' ? 'clone' : p.origin === 'copy' ? 'copy' : null);
+
+/**
+ * The card followed through generation g. Priority: the card that broke the record (unless it is the elite, whose
+ * gain came from migration), then the first crossover child, a clone (crossover refused by Pc), or a roulette copy.
+ * This way generations without crossover, which are most of them once the population is good, still show a story.
+ */
+export function spotlight(gens: Generation[], g: number): Spot | null {
   if (g <= 0) return null;
-  const child = gens[g].population.find((p) => p.origin === 'cross' && p.cut && p.parents);
-  if (!child) return null;
+  const pop = gens[g].population;
   const prev = gens[g - 1].population;
-  const [ia, ib] = child.parents!;
-  return { child, a: prev[ia], b: prev[ib], ia, ib };
+  const recordCard = gens[g].bestMakespan < gens[g - 1].bestMakespan - 1e-9 ? pop[gens[g].bestIdx] : null;
+  const child =
+    (recordCard && kindOf(recordCard) ? recordCard : null) ??
+    pop.find((p) => kindOf(p) === 'cross') ??
+    pop.find((p) => kindOf(p) === 'clone') ??
+    pop.find((p) => kindOf(p) === 'copy');
+  if (!child?.parents) return null;
+  const [ia, ib] = child.parents;
+  return { child, a: prev[ia], b: prev[ib], ia, ib, kind: kindOf(child)!, record: child === recordCard };
 }
 
-/** Child right after crossover (before mutation) and which genes changed afterwards. */
-export function breed(spot: NonNullable<ReturnType<typeof spotlight>>, ev: Evaluator) {
-  const [c0, c1] = spot.child.cut!;
-  const pre = spot.a.genes.map((v, k) => (k >= c0 && k <= c1 ? spot.b.genes[k] : v));
-  const changed = spot.child.genes.map((v, k) => (v !== pre[k] ? k : -1)).filter((k) => k >= 0);
-  return { pre, preMs: ev.makespan(pre), changed, cut: [c0, c1] as [number, number] };
+/** Child right after crossover (before mutation) and which genes the mutation changed afterwards. */
+export function breed(spot: Spot, ev: Evaluator) {
+  const cut = spot.kind === 'cross' && spot.child.cut ? spot.child.cut : null;
+  const pre = spot.a.genes.map((v, k) => (cut && k >= cut[0] && k <= cut[1] ? spot.b.genes[k] : v));
+  const changed = [...new Set(spot.child.mutated ?? [])].filter((k) => spot.child.genes[k] !== pre[k]).sort((x, y) => x - y);
+  return { pre, preMs: ev.makespan(pre), changed, cut };
 }
 
-type Tag = 'A' | 'B' | 'AB' | 'child' | null;
+/** Generations where the best-so-far makespan dropped, and what caused it. */
+export function recordMoments(gens: Generation[]): { gen: number; from: number; to: number; cause: string }[] {
+  const out: { gen: number; from: number; to: number; cause: string }[] = [];
+  for (let g = 1; g < gens.length; g++) {
+    const from = gens[g - 1].bestMakespan;
+    const to = gens[g].bestMakespan;
+    if (to >= from - 1e-9) continue;
+    const best = gens[g].population[gens[g].bestIdx];
+    const mig = gens[g].migrations;
+    let cause = 'seleksi';
+    if (mig.length && mig[0].before >= from - 1e-9) cause = 'migrasi';
+    else if (best.mutated?.length) cause = 'mutasi';
+    else if (best.origin === 'cross') cause = 'crossover';
+    out.push({ gen: g, from, to, cause });
+  }
+  return out;
+}
+
+type Tag = 'A' | 'B' | 'AB' | 'pick' | 'child' | null;
 
 export default function PlanningRoom() {
   const { run, scene } = useKitchen();
@@ -66,6 +114,7 @@ export default function PlanningRoom() {
   const tagOf = (i: number): Tag => {
     if (!spot) return null;
     if (phase >= 1 && phase <= 3) {
+      if (spot.kind === 'copy') return i === spot.ia ? 'pick' : null;
       if (i === spot.ia && i === spot.ib) return 'AB';
       if (i === spot.ia) return 'A';
       if (i === spot.ib) return 'B';
@@ -103,7 +152,8 @@ const TAG_STYLE: Record<Exclude<Tag, null>, { color: string; text: string }> = {
   A: { color: COLOR_A, text: 'Induk A' },
   B: { color: COLOR_B, text: 'Induk B' },
   AB: { color: COLOR_A, text: 'Induk A = B' },
-  child: { color: COLOR_CHILD, text: 'Anak yang diikuti' },
+  pick: { color: COLOR_A, text: 'Terpilih untuk disalin' },
+  child: { color: COLOR_CHILD, text: 'Kartu yang diikuti' },
 };
 
 function PlanCard({ ind, rank, worst, best, isBest, tag }: { ind: Individual; rank: number; worst: number; best: number; isBest: boolean; tag: Tag }) {
@@ -187,7 +237,7 @@ function usePhaseClock(key: string) {
 const SPIN_SPLIT = 1.9; // seconds into the selection step when the wheel turns again for parent B
 
 /** Roulette over generation g-1: slice angle proportional to fitness 1/makespan; spins to parent A, then parent B. */
-function Roulette({ g, phase, spot }: { g: number; phase: number; spot: ReturnType<typeof spotlight> }) {
+function Roulette({ g, phase, spot }: { g: number; phase: number; spot: Spot | null }) {
   const { run } = useKitchen();
   const wheel = useRef<THREE.Group>(null);
   const prev = run.generations[Math.max(0, g - 1)].population;
@@ -203,6 +253,8 @@ function Roulette({ g, phase, spot }: { g: number; phase: number; spot: ReturnTy
     });
   }, [prev]);
   const centre = (i: number) => slices[i].start + slices[i].len / 2;
+  // a roulette copy needs one spin; a parent pair needs two
+  const single = spot?.kind === 'copy';
   // pointer sits at angle PI/2 (top); land the chosen slice centre under it after a few full turns
   const tA = spot ? Math.PI / 2 - centre(spot.ia) + Math.PI * 2 * 3 * (2 * g) : 0;
   const tB = spot ? Math.PI / 2 - centre(spot.ib) + Math.PI * 2 * 3 * (2 * g + 1) : 0;
@@ -222,16 +274,23 @@ function Roulette({ g, phase, spot }: { g: number; phase: number; spot: ReturnTy
     if (!w) return;
     const t = clock(c.elapsedTime);
     let target = hold.current;
-    if (spot && phase === 1) target = t < SPIN_SPLIT ? tA : tB;
-    else if (spot && phase > 1) target = tB;
+    if (spot && phase === 1) target = t < SPIN_SPLIT || single ? tA : tB;
+    else if (spot && phase > 1) target = single ? tA : tB;
     else if (phase === 0) target = hold.current; // wait for the selection step
     hold.current = target;
     w.rotation.z = smoothDamp(w.rotation.z, target, wv.current, 0.55, dt);
   });
 
   const showA = spot && phase >= 1;
-  const showB = spot && (phase > 1 || (phase === 1 && second));
-  const caption = !spot || phase === 0 ? 'Roda Roulette · irisan ∝ 1/makespan' : phase === 1 && !second ? 'Memutar… Induk A terpilih' : 'Induk A dan Induk B terpilih';
+  const showB = spot && !single && (phase > 1 || (phase === 1 && second));
+  const caption =
+    !spot || phase === 0
+      ? 'Roda Roulette · irisan ∝ 1/makespan'
+      : single
+        ? 'Satu putaran: kartu terpilih untuk disalin'
+        : phase === 1 && !second
+          ? 'Memutar… Induk A terpilih'
+          : 'Induk A dan Induk B terpilih';
   return (
     <group position={[3.75, 2.75, WALL_Z + 0.1]}>
       <mesh position={[0, 0, -0.05]} rotation={[Math.PI / 2, 0, 0]}>
@@ -268,7 +327,7 @@ function Roulette({ g, phase, spot }: { g: number; phase: number; spot: ReturnTy
  * Breeding table. Selection: parent strips appear. Crossover: each child chip flies in from parent A (outside the
  * cut) or parent B (inside the cut). Mutation: changed genes pulse and flip colour. New generation: final child.
  */
-function BreedingTable({ spot, g, phase }: { spot: ReturnType<typeof spotlight>; g: number; phase: number }) {
+function BreedingTable({ spot, g, phase }: { spot: Spot | null; g: number; phase: number }) {
   const { ev } = useKitchen();
   const chips = useRef<THREE.Group>(null);
   const ROWS = { a: 0.0, b: 0.62, c: 1.4 };
@@ -281,7 +340,8 @@ function BreedingTable({ spot, g, phase }: { spot: ReturnType<typeof spotlight>;
     const grp = chips.current;
     if (!grp || !spot || !info) return;
     const t = clock(c.elapsedTime);
-    const [c0, c1] = info.cut;
+    // no crossover (clone / copy): every chip comes from parent A
+    const [c0, c1] = info.cut ?? [-1, -2];
     const changed = new Set(info.changed);
     grp.visible = phase >= 2;
     grp.children.forEach((m, k) => {
@@ -314,10 +374,10 @@ function BreedingTable({ spot, g, phase }: { spot: ReturnType<typeof spotlight>;
       </mesh>
       {spot && info && phase >= 1 && (
         <>
-          {(['a', 'b'] as const).map((key) => (
+          {(spot.kind === 'copy' ? (['a'] as const) : (['a', 'b'] as const)).map((key) => (
             <group key={key}>
               {spot[key].genes.map((vm, k) => {
-                const inCut = k >= info.cut[0] && k <= info.cut[1];
+                const inCut = !!info.cut && k >= info.cut[0] && k <= info.cut[1];
                 // after crossover, fade the genes the child did not take
                 const used = phase < 2 || (key === 'a' ? !inCut : inCut);
                 return (
@@ -329,7 +389,7 @@ function BreedingTable({ spot, g, phase }: { spot: ReturnType<typeof spotlight>;
               })}
             </group>
           ))}
-          {phase >= 2 && (
+          {phase >= 2 && info.cut && (
             <>
               {/* the cut: genes between the two markers come from parent B */}
               <mesh position={[x0 + ((info.cut[0] + info.cut[1]) / 2) * gap, 0.935, 0.7]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -354,18 +414,20 @@ function BreedingTable({ spot, g, phase }: { spot: ReturnType<typeof spotlight>;
           </group>
           <Label position={[x0 + (N - 1) * gap + 0.3, 0.96, ROWS.a]} style={{ pointerEvents: 'none' }}>
             <div className="row-tag" style={{ transform: 'translateY(-50%)', borderLeft: `3px solid ${COLOR_A}` }}>
-              Induk A · {Math.round(spot.a.makespan)} s
+              {spot.kind === 'copy' ? 'Kartu terpilih' : 'Induk A'} · {Math.round(spot.a.makespan)} s
             </div>
           </Label>
-          <Label position={[x0 + (N - 1) * gap + 0.3, 0.96, ROWS.b]} style={{ pointerEvents: 'none' }}>
-            <div className="row-tag" style={{ transform: 'translateY(-50%)', borderLeft: `3px solid ${COLOR_B}` }}>
-              Induk B · {Math.round(spot.b.makespan)} s
-            </div>
-          </Label>
+          {spot.kind !== 'copy' && (
+            <Label position={[x0 + (N - 1) * gap + 0.3, 0.96, ROWS.b]} style={{ pointerEvents: 'none' }}>
+              <div className="row-tag" style={{ transform: 'translateY(-50%)', borderLeft: `3px solid ${COLOR_B}` }}>
+                Induk B · {Math.round(spot.b.makespan)} s{spot.kind === 'clone' ? ' (tidak dipakai)' : ''}
+              </div>
+            </Label>
+          )}
           {phase >= 2 && (
             <Label position={[x0 + (N - 1) * gap + 0.3, 1.0, ROWS.c]} style={{ pointerEvents: 'none' }}>
               <div className="row-tag child" style={{ transform: 'translateY(-50%)' }}>
-                Anak · {Math.round(childMs ?? 0)} s
+                {spot.kind === 'copy' ? 'Salinan' : 'Anak'} · {Math.round(childMs ?? 0)} s
               </div>
             </Label>
           )}

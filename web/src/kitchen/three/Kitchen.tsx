@@ -20,6 +20,7 @@ import {
   boardSlot,
   fmtS,
 } from '../model';
+import type { Placement } from '../../sim/types';
 import { useKitchen } from '../store';
 import Chef, { type Mood } from './Chef';
 import { Toon, shade } from './toon';
@@ -27,9 +28,11 @@ import { Spring3, smoothDamp, useInitial } from './anim';
 
 const STOVE_H = 0.92;
 const DISH_R = 0.27;
+/** Wall-clock seconds one "Putar waktu" playback takes, whatever the makespan. */
+const PLAY_SECONDS = 6;
 
 export default function Kitchen() {
-  const { scene, stats, run, chapter } = useKitchen();
+  const { scene, stats, run, chapter, playing } = useKitchen();
   // Time -> height scale follows the current plan, but never zooms in past the Max-Min schedule,
   // so towers of different plans are comparable.
   const tMax = Math.max(stats.makespan, run.maxMinMakespan, LAB_LB) * 1.04;
@@ -42,6 +45,7 @@ export default function Kitchen() {
       ))}
       <Dishes k={k} />
       {showLines && <TimeLines k={k} />}
+      {playing && <TimePlayer k={k} />}
       <OrderBoard />
       <OrderWindow active={chapter <= 3} />
       <ManagerChef />
@@ -51,17 +55,19 @@ export default function Kitchen() {
 }
 
 function Station({ v }: { v: number }) {
-  const { scene, stats, selected, setSelected, setScene } = useKitchen();
+  const { scene, stats, selected, setSelected, setScene, playing } = useKitchen();
   const vm = VMS[v];
   const w = STATION_WIDTH[v];
   const busy = stats.placements.filter((p) => p.vm === v);
   const isBottleneck = stats.bottleneck === v && stats.placements.length > 0;
+  // during "Putar waktu" the bottleneck is only revealed once the last order is done
+  const showBottleneck = isBottleneck && !playing;
   const focused = scene.focusVm === v;
   const [hover, setHover] = useState(false);
   const clickable = scene.interactive && selected !== null;
 
   let mood: Mood = busy.length ? 'cooking' : 'idle';
-  if (isBottleneck && scene.plan.every((p) => p >= 0)) mood = 'stressed';
+  if (showBottleneck && scene.plan.every((p) => p >= 0)) mood = 'stressed';
   if (scene.celebrate) mood = 'celebrate';
   if (focused) mood = 'thinking';
 
@@ -70,7 +76,7 @@ function Station({ v }: { v: number }) {
     e.stopPropagation();
     const plan = [...scene.plan];
     plan[selected!] = v;
-    setScene({ plan });
+    setScene({ plan, focusVm: null });
     setSelected(null);
   };
 
@@ -119,10 +125,10 @@ function Station({ v }: { v: number }) {
         )}
       </group>
       {Array.from({ length: vm.pes }, (_, p) => (
-        <Burner key={p} x={BURNER_X[v][p]} lit={busy.some((b) => b.pe === p)} hot={isBottleneck} />
+        <Burner key={p} x={BURNER_X[v][p]} jobs={busy.filter((b) => b.pe === p)} hot={showBottleneck} />
       ))}
-      {isBottleneck && <Smoke x={STATION_X[v]} />}
-      {isBottleneck && <Flag x={STATION_X[v] + w / 2 - 0.25} />}
+      {showBottleneck && <Smoke x={STATION_X[v]} />}
+      {showBottleneck && <Flag x={STATION_X[v] + w / 2 - 0.25} />}
       <Chef
         position={[STATION_X[v], 0, -0.95]}
         apron={CHEF_COLORS[v]}
@@ -143,11 +149,15 @@ function Station({ v }: { v: number }) {
   );
 }
 
-function Burner({ x, lit, hot }: { x: number; lit: boolean; hot: boolean }) {
+/** One burner. Lit while any of its orders is cooking: always outside playback, at the simulated time during it. */
+function Burner({ x, jobs, hot }: { x: number; jobs: Placement[]; hot: boolean }) {
+  const { clock: play } = useKitchen();
   const flame = useRef<THREE.Group>(null);
   useFrame(({ clock }) => {
     const f = flame.current;
     if (!f) return;
+    const now = play.t;
+    const lit = now === null ? jobs.length > 0 : jobs.some((j) => now >= j.start && now < j.finish);
     const t = clock.elapsedTime * (hot ? 18 : 11) + x * 3;
     const s = lit ? 1 + Math.sin(t) * 0.12 + Math.sin(t * 2.3) * 0.08 : 0.001;
     f.scale.set(s, lit ? s * (hot ? 1.5 : 1) : 0.001, s);
@@ -239,14 +249,30 @@ function Dishes({ k }: { k: number }) {
           pos = [BURNER_X[v][p.pe], PASS_TOP + p.start * k, PASS_Z];
           color = CHEF_COLORS[v];
         }
-        return <Dish key={t.id} task={t.id} target={pos} height={h} color={color} placed={!!p && v >= 0} />;
+        const cook = p && v >= 0 ? { start: p.start, finish: p.finish, k } : null;
+        return <Dish key={t.id} task={t.id} target={pos} height={h} color={color} placed={!!cook} cook={cook} />;
       })}
     </>
   );
 }
 
-function Dish({ task, target, height, color, placed }: { task: number; target: [number, number, number]; height: number; color: string; placed: boolean }) {
-  const { scene, selected, setSelected, stats } = useKitchen();
+function Dish({
+  task,
+  target,
+  height,
+  color,
+  placed,
+  cook,
+}: {
+  task: number;
+  target: [number, number, number];
+  height: number;
+  color: string;
+  placed: boolean;
+  /** cooking interval and time scale, used to grow the tower during "Putar waktu" */
+  cook: { start: number; finish: number; k: number } | null;
+}) {
+  const { scene, selected, setSelected, stats, clock: play } = useKitchen();
   const g = useRef<THREE.Group>(null);
   const body = useRef<THREE.Group>(null);
   const [hover, setHover] = useState(false);
@@ -268,7 +294,17 @@ function Dish({ task, target, height, color, placed }: { task: number; target: [
     node.position.x = smoothDamp(node.position.x, target[0], s.vx, 0.42, dt);
     node.position.z = smoothDamp(node.position.z, target[2], s.vz, 0.42, dt);
     node.position.y = smoothDamp(node.position.y, target[1] + far + lift, s.vy, 0.24, dt);
-    b.scale.y = Math.max(0.01, smoothDamp(b.scale.y, height, hv.current, 0.3, dt));
+    if (play.t !== null && cook) {
+      // playback: the tower grows while the order cooks and is absent before it starts
+      const done = Math.min(Math.max(play.t - cook.start, 0), cook.finish - cook.start);
+      // a squashed cylinder still shows its cap as a disc, so hide orders that have not started yet
+      b.visible = done > 0;
+      b.scale.y = done > 0 ? Math.max(0.01, Math.min(height, done * cook.k)) : 0.001;
+      hv.current.v = 0;
+    } else {
+      b.visible = true;
+      b.scale.y = Math.max(0.01, smoothDamp(b.scale.y, height, hv.current, 0.3, dt));
+    }
     b.position.y = b.scale.y / 2;
   });
 
@@ -312,11 +348,35 @@ function Dish({ task, target, height, color, placed }: { task: number; target: [
   );
 }
 
+const LINE_W = KITCHEN_HALF_WIDTH * 2 + 0.6;
+
+/** Dashed horizontal line across the pass shelf (lower bound, HMMGA target). */
+function DashedLine({ color, dashes = 34 }: { color: string; dashes?: number }) {
+  const w = LINE_W;
+  return (
+    <>
+      {Array.from({ length: dashes }, (_, i) => (
+        <mesh key={i} position={[-w / 2 + (i + 0.5) * (w / dashes), 0, 0]}>
+          <boxGeometry args={[(w / dashes) * 0.55, 0.025, 0.025]} />
+          <meshBasicMaterial color={color} />
+        </mesh>
+      ))}
+    </>
+  );
+}
+
+/**
+ * Reference lines over the towers. Right end: red makespan tag above its line, blue lower-bound tag below its line.
+ * The HMMGA target (challenge chapter only) is tagged at the left end so the three tags never collide.
+ */
 function TimeLines({ k }: { k: number }) {
-  const { stats } = useKitchen();
-  const w = KITCHEN_HALF_WIDTH * 2 + 0.6;
+  const { stats, run, scene, playing } = useKitchen();
+  const w = LINE_W;
   const yM = PASS_TOP + stats.makespan * k;
   const yL = PASS_TOP + LAB_LB * k;
+  const yT = PASS_TOP + run.bestMakespan * k;
+  const matchesHmmga = stats.makespan <= run.bestMakespan + 1e-6;
+  const showTarget = scene.interactive && !matchesHmmga;
   const m = useRef<THREE.Group>(null);
   const initM = useInitial<[number, number, number]>([0, yM, PASS_Z]);
   const mv = useRef({ v: 0 });
@@ -325,31 +385,72 @@ function TimeLines({ k }: { k: number }) {
   });
   return (
     <>
-      <group ref={m} position={initM}>
+      {/* during playback the makespan is revealed when the last order finishes */}
+      <group ref={m} position={initM} visible={!playing}>
         <mesh>
-          <boxGeometry args={[w, 0.03, 0.03]} />
+          <boxGeometry args={[w, 0.035, 0.035]} />
           <meshBasicMaterial color="#ff5a5f" />
         </mesh>
-        <Label position={[w / 2 + 0.1, 0, 0]} style={{ pointerEvents: 'none' }}>
-          <div className="line-tag red" style={{ transform: 'translateY(-130%)' }}>
-            makespan {fmtS(stats.makespan)}
-          </div>
-        </Label>
+        {!playing && (
+          <Label position={[w / 2, 0, 0]} style={{ pointerEvents: 'none' }}>
+            <div className="line-tag red" style={{ transform: 'translate(-100%, -125%)' }}>
+              ⏰ makespan {fmtS(stats.makespan)}
+              {scene.interactive && matchesHmmga && <span className="ok"> ✓ setara HMMGA</span>}
+            </div>
+          </Label>
+        )}
       </group>
       <group position={[0, yL, PASS_Z - 0.02]}>
-        {Array.from({ length: 34 }, (_, i) => (
-          <mesh key={i} position={[-w / 2 + (i + 0.5) * (w / 34), 0, 0]}>
-            <boxGeometry args={[(w / 34) * 0.55, 0.025, 0.025]} />
-            <meshBasicMaterial color="#5ec8ff" />
-          </mesh>
-        ))}
-        <Label position={[w / 2 + 0.1, 0, 0]} style={{ pointerEvents: 'none' }}>
-          <div className="line-tag blue" style={{ transform: 'translateY(30%)' }}>
+        <DashedLine color="#5ec8ff" />
+        <Label position={[w / 2, 0, 0]} style={{ pointerEvents: 'none' }}>
+          <div className="line-tag blue" style={{ transform: 'translate(-100%, 25%)' }}>
             batas tercepat {fmtS(LAB_LB)}
           </div>
         </Label>
       </group>
+      {showTarget && (
+        <group position={[0, yT, PASS_Z - 0.01]}>
+          <DashedLine color="#f0b429" dashes={22} />
+          <Label position={[-w / 2, 0, 0]} style={{ pointerEvents: 'none' }}>
+            <div className="line-tag gold" style={{ transform: 'translateY(-125%)' }}>
+              🎯 target HMMGA {fmtS(run.bestMakespan)}
+            </div>
+          </Label>
+        </group>
+      )}
     </>
+  );
+}
+
+/** "Putar waktu": advances the simulated clock and draws the rising "now" line with its time tag. */
+function TimePlayer({ k }: { k: number }) {
+  const { stats, clock, stopPlayback } = useKitchen();
+  const line = useRef<THREE.Group>(null);
+  const tag = useRef<HTMLDivElement>(null);
+  const end = stats.makespan;
+  useFrame((_, dt) => {
+    if (clock.t === null) return;
+    clock.t = Math.min(end, clock.t + (Math.min(dt, 0.1) * end) / PLAY_SECONDS);
+    if (line.current) line.current.position.y = PASS_TOP + clock.t * k;
+    if (tag.current) tag.current.textContent = `⏱ t = ${Math.round(clock.t)} s`;
+    if (clock.t >= end) stopPlayback();
+  });
+  return (
+    <group ref={line} position={[0, PASS_TOP, PASS_Z + 0.02]}>
+      <mesh>
+        <boxGeometry args={[LINE_W, 0.03, 0.03]} />
+        <meshBasicMaterial color="#ffffff" />
+      </mesh>
+      <mesh position={[0, 0, -0.3]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[LINE_W, 0.7]} />
+        <meshBasicMaterial color="#ffffff" transparent opacity={0.08} depthWrite={false} side={THREE.DoubleSide} />
+      </mesh>
+      <Label position={[LINE_W / 2, 0, 0]} style={{ pointerEvents: 'none' }}>
+        <div ref={tag} className="line-tag now" style={{ transform: 'translate(-100%, -125%)' }}>
+          ⏱ t = 0 s
+        </div>
+      </Label>
+    </group>
   );
 }
 

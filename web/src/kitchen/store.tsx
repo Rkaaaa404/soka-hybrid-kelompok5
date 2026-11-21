@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { AlgoId, MetricKey } from '../data/types';
 import { Evaluator } from '../sim/evaluator';
 import { DEFAULT_LAB_PARAMS, runHmmga, type HmmgaRun } from '../sim/hmmga';
@@ -43,6 +43,15 @@ interface Kitchen {
   setPanelOpen: (open: boolean) => void;
   panelSize: PanelSize;
   setPanelSize: (s: PanelSize) => void;
+  /** "Putar waktu": simulated clock read every frame by the 3D kitchen (t = null when not playing). */
+  clock: PlayClock;
+  playing: boolean;
+  startPlayback: () => void;
+  stopPlayback: () => void;
+}
+
+export interface PlayClock {
+  t: number | null;
 }
 
 export type PanelSize = 'normal' | 'large' | 'full';
@@ -61,7 +70,8 @@ const ALL_ALGOS: AlgoId[] = ['HMMGA', 'HSO', 'PHS', 'CSA', 'MinMin', 'MaxMin', '
 
 export function KitchenProvider({ children }: { children: ReactNode }) {
   const [chapter, setChapter] = useState(readHash);
-  const [seed, setSeed] = useState(42);
+  // seed 44: the demo run where every HMMGA stage shows up (Max-Min 227 → migration 215 → mutation 207 s)
+  const [seed, setSeed] = useState(44);
   const run = useMemo(() => runHmmga(TASKS, VMS, { ...DEFAULT_LAB_PARAMS, seed }), [seed]);
   const ev = useMemo(() => new Evaluator(TASKS, VMS, run.taskOrder), [run]);
   const [scene, setSceneState] = useState<Scene>(() => ({
@@ -93,9 +103,42 @@ export function KitchenProvider({ children }: { children: ReactNode }) {
 
   const stats = useMemo(() => planStats(ev, scene.plan), [ev, scene.plan]);
 
+  const clock = useRef<PlayClock>({ t: null }).current;
+  const [playing, setPlaying] = useState(false);
+  const startPlayback = useCallback(() => {
+    clock.t = 0;
+    setPlaying(true);
+  }, [clock]);
+  const stopPlayback = useCallback(() => {
+    clock.t = null;
+    setPlaying(false);
+  }, [clock]);
+  // a new plan or chapter ends the playback
+  useEffect(() => stopPlayback(), [scene.plan, chapter, stopPlayback]);
+
   const value = useMemo<Kitchen>(
-    () => ({ chapter, go, seed, setSeed, run, ev, scene, setScene, selected, setSelected, stats, panelOpen, setPanelOpen, panelSize, setPanelSize }),
-    [chapter, go, seed, run, ev, scene, setScene, selected, stats, panelOpen, panelSize],
+    () => ({
+      chapter,
+      go,
+      seed,
+      setSeed,
+      run,
+      ev,
+      scene,
+      setScene,
+      selected,
+      setSelected,
+      stats,
+      panelOpen,
+      setPanelOpen,
+      panelSize,
+      setPanelSize,
+      clock,
+      playing,
+      startPlayback,
+      stopPlayback,
+    }),
+    [chapter, go, seed, run, ev, scene, setScene, selected, stats, panelOpen, panelSize, clock, playing, startPlayback, stopPlayback],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
