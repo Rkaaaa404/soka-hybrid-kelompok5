@@ -80,7 +80,7 @@ export function Selection() {
         <div className="hcard" style={{ ['--c' as string]: ALGO_COLOR.HSO }}>
           <h3>HSO</h3>
           <p>PSO + Salp Swarm Optimization, plus deteksi VM overload (MLR-DOVM).</p>
-          <Cite text="Eldesokey dkk. (2021), Int. J. Commun. Syst., e4694." doi="10.1002/dac.4694" pdf="hso-eldesokey-2021.pdf" />
+          <Cite text="Eldesokey dkk. (2021), Int. J. Commun. Syst., e4694." doi="10.1002/dac.4694" />
         </div>
         <div className={`hcard${winner === 'HMMGA' ? ' win' : ''}`} style={{ ['--c' as string]: ALGO_COLOR.HMMGA }}>
           <h3>HMMGA {winner === 'HMMGA' && <span className="badge win">★ juara</span>}</h3>

@@ -37,3 +37,9 @@ nbproject/
 *.swp
 *~
 CLAUDE.md 
+# ── Paywalled papers (Wiley / Elsevier): keep local copies, do not publish ───
+docs/
+HSO Algorithm.pdf
+web/public/papers/hso-eldesokey-2021.pdf
+web/public/papers/csa-jena-2017.pdf
+web/public/papers/phs-melnik-2015.pdf

@@ -302,10 +302,9 @@ export function Conclusion() {
       <Cite
         text="Eldesokey, H. M., dkk. (2021). Hybrid swarm optimization algorithm based on task scheduling in a cloud environment. Int. J. Commun. Syst., e4694."
         doi="10.1002/dac.4694"
-        pdf="hso-eldesokey-2021.pdf"
       />
-      <Cite text="Jena (2017). A Two-Stage Clonal Selection Algorithm for Task Scheduling in Cloud Computing Environment. (CSA, task-5)" pdf="csa-jena-2017.pdf" />
-      <Cite text="Melnik & Trofimenko (2015). Polyrhythmic Harmony Search Algorithm for Resource Allocation in Distributed Computing Systems. (PHS, task-5)" pdf="phs-melnik-2015.pdf" />
+      <Cite text="Jena (2017). A Two-Stage Clonal Selection Algorithm for Task Scheduling in Cloud Computing Environment. (CSA, task-5)" />
+      <Cite text="Melnik & Trofimenko (2015). Polyrhythmic Harmony Search Algorithm for Resource Allocation in Distributed Computing Systems. (PHS, task-5)" />
     </>
   );
 }

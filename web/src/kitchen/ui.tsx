@@ -175,7 +175,7 @@ export function Stat({ label, value, tone }: { label: string; value: ReactNode; 
   );
 }
 
-export function Cite({ text, doi, pdf }: { text: string; doi?: string; pdf: string }) {
+export function Cite({ text, doi, pdf }: { text: string; doi?: string; pdf?: string }) {
   return (
     <p className="ref">
       {text}{' '}
@@ -183,11 +183,15 @@ export function Cite({ text, doi, pdf }: { text: string; doi?: string; pdf: stri
         <a href={`https://doi.org/${doi}`} target="_blank" rel="noreferrer">
           doi:{doi}
         </a>
-      )}{' '}
-      ·{' '}
-      <a href={`${import.meta.env.BASE_URL}papers/${pdf}`} target="_blank" rel="noreferrer">
-        PDF
-      </a>
+      )}
+      {pdf && (
+        <>
+          {' · '}
+          <a href={`${import.meta.env.BASE_URL}papers/${pdf}`} target="_blank" rel="noreferrer">
+            PDF
+          </a>
+        </>
+      )}
     </p>
   );
 }

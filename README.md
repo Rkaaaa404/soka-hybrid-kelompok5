@@ -21,8 +21,8 @@ Dari `context.md`: pilih dua algoritma hybrid dari paper dan cantumkan referensi
 
 | Hybrid | Paper | File |
 |---|---|---|
-| **HSO**: Hybrid Swarm Optimization | Eldesokey dkk. (2021), *Int. J. Commun. Syst.*, e4694, [doi:10.1002/dac.4694](https://doi.org/10.1002/dac.4694) | `docs/hso-eldesokey-2021.pdf` |
-| **HMMGA**: Hybrid Max-Min Genetic Algorithm | Kodli & Terdal (2021), *IJIES* 14(1), 63–71, [doi:10.22266/ijies2021.0228.07](https://doi.org/10.22266/ijies2021.0228.07) | `docs/hmmga-kodli-2021.pdf` |
+| **HSO**: Hybrid Swarm Optimization | Eldesokey dkk. (2021), *Int. J. Commun. Syst.*, e4694, [doi:10.1002/dac.4694](https://doi.org/10.1002/dac.4694) | tidak disertakan (akses berbayar) |
+| **HMMGA**: Hybrid Max-Min Genetic Algorithm | Kodli & Terdal (2021), *IJIES* 14(1), 63–71, [doi:10.22266/ijies2021.0228.07](https://doi.org/10.22266/ijies2021.0228.07) | `web/public/papers/hmmga-kodli-2021.pdf` |
 
 ## Hasil
 
@@ -144,9 +144,9 @@ GitHub Pages dibangun oleh `.github/workflows/pages.yml` (`npm ci`, typecheck, b
 
 ```
 task-7/
-├── context.md, *.pdf        soal dan paper asli
+├── context.md               soal tugas
 ├── dataset/                 GoCJ (salinan tugas 5)
-├── docs/                    PDF keempat paper yang dirujuk
+├── docs/                    PDF paper (lokal, tidak di-commit)
 ├── java/                    modul CloudSim (salinan mandiri tugas 5 + HSO/HMMGA)
 ├── scripts/export_snapshots.py
 ├── web/                     presentasi Vite + React + R3F
