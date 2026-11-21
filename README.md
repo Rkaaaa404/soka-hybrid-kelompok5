@@ -96,10 +96,9 @@ Catatan adaptasi:
 Isi 9 bab:
 1. **Sambutan**: peta konsep dan daftar tim.
 2. **Seleksi**: HSO vs HMMGA di panggung kompetisi, dengan sitasi. HMMGA menang di makespan, jadi HMMGA yang dipresentasikan.
-3. **Dapur**: tantangan interaktif. Klik rantang, lalu klik kompor koki untuk memindahkan pesanan, dan coba samai HMMGA. Isinya:
-   - papan skor satu sumbu: Round Robin, Max-Min, HMMGA, batas tercepat, dan penanda "Dapur sekarang" beserta asal jadwalnya
+3. **Dapur**: membandingkan tiga cara membagi pesanan yang sama: Round Robin, Max-Min, dan HMMGA. Jadwal dipilih lewat tab, dan rantang tidak bisa dipindah manual. Isinya:
+   - papan skor satu sumbu: Round Robin, Max-Min, HMMGA, batas tercepat, dan penanda jadwal yang sedang tampil
    - garis target HMMGA
-   - tombol **Petunjuk**, yang mencari pindahan terbaik dari koki bendera merah
    - tombol **Putar waktu**, yang memutar ulang dapur dari detik 0 sehingga menara tumbuh dan garis makespan muncul di akhir
 4. **Max-Min**: manajer mengambil pesanan terberat lebih dulu dan memberikannya ke koki yang paling cepat selesai (step/play). Bab 4–6 diawali peta alur HMMGA: Max-Min → GA → migrasi.
 5. **GA**: ruang rencana berisi kartu jadwal (kromosom) yang diurutkan menurut fitness, roda roulette, meja persilangan two-point dengan animasi mutasi, dan mahkota elit. Pendukungnya:

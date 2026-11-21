@@ -10,7 +10,7 @@ import { ALL_ALGOS, useKitchen, type Scene } from '../store';
 import { arenaCaption } from '../three/Arena';
 import { Cite, Dock } from '../ui';
 
-const BASE: Partial<Scene> = { focusTask: null, focusVm: null, interactive: false, celebrate: false, ga: null };
+const BASE: Partial<Scene> = { focusTask: null, focusVm: null, target: false, celebrate: false, ga: null };
 
 function ScaleTabs() {
   const { scene, setScene } = useKitchen();

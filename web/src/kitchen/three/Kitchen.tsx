@@ -1,4 +1,4 @@
-import { useFrame, type ThreeEvent } from '@react-three/fiber';
+import { useFrame } from '@react-three/fiber';
 import { useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { Label } from '../../three/Overlay';
@@ -55,7 +55,7 @@ export default function Kitchen() {
 }
 
 function Station({ v }: { v: number }) {
-  const { scene, stats, selected, setSelected, setScene, playing } = useKitchen();
+  const { scene, stats, playing } = useKitchen();
   const vm = VMS[v];
   const w = STATION_WIDTH[v];
   const busy = stats.placements.filter((p) => p.vm === v);
@@ -63,35 +63,19 @@ function Station({ v }: { v: number }) {
   // during "Putar waktu" the bottleneck is only revealed once the last order is done
   const showBottleneck = isBottleneck && !playing;
   const focused = scene.focusVm === v;
-  const [hover, setHover] = useState(false);
-  const clickable = scene.interactive && selected !== null;
 
   let mood: Mood = busy.length ? 'cooking' : 'idle';
   if (showBottleneck && scene.plan.every((p) => p >= 0)) mood = 'stressed';
   if (scene.celebrate) mood = 'celebrate';
   if (focused) mood = 'thinking';
 
-  const onClick = (e: ThreeEvent<MouseEvent>) => {
-    if (!clickable) return;
-    e.stopPropagation();
-    const plan = [...scene.plan];
-    plan[selected!] = v;
-    setScene({ plan, focusVm: null });
-    setSelected(null);
-  };
-
   return (
     <group>
-      <group
-        position={[STATION_X[v], 0, 0]}
-        onClick={onClick}
-        onPointerOver={(e) => (e.stopPropagation(), setHover(true))}
-        onPointerOut={() => setHover(false)}
-      >
+      <group position={[STATION_X[v], 0, 0]}>
         {/* stove */}
         <mesh position={[0, STOVE_H / 2, 0]}>
           <boxGeometry args={[w, STOVE_H, 0.95]} />
-          <Toon color={clickable && hover ? '#d6dde6' : '#b9c1cb'} emissive={focused ? CHEF_COLORS[v] : '#000'} emissiveIntensity={focused ? 0.25 : 0} />
+          <Toon color="#b9c1cb" emissive={focused ? CHEF_COLORS[v] : '#000'} emissiveIntensity={focused ? 0.25 : 0} />
         </mesh>
         <mesh position={[0, STOVE_H + 0.015, -0.05]}>
           <boxGeometry args={[w - 0.08, 0.03, 0.8]} />
@@ -138,7 +122,7 @@ function Station({ v }: { v: number }) {
         phase={v * 1.7}
       />
       <Label position={[STATION_X[v], 0.05, 1.5]} center style={{ pointerEvents: 'none' }}>
-        <div className={`chef-tag${focused ? ' on' : ''}${clickable ? ' drop' : ''}`} style={{ ['--c' as string]: CHEF_COLORS[v] }}>
+        <div className={`chef-tag${focused ? ' on' : ''}`} style={{ ['--c' as string]: CHEF_COLORS[v] }}>
           <b>{CHEF_NAMES[v]}</b>
           <span>
             {vm.pes} kompor · {vm.mips} MIPS
@@ -272,13 +256,11 @@ function Dish({
   /** cooking interval and time scale, used to grow the tower during "Putar waktu" */
   cook: { start: number; finish: number; k: number } | null;
 }) {
-  const { scene, selected, setSelected, stats, clock: play } = useKitchen();
+  const { scene, stats, clock: play } = useKitchen();
   const g = useRef<THREE.Group>(null);
   const body = useRef<THREE.Group>(null);
   const [hover, setHover] = useState(false);
   const focus = scene.focusTask === task;
-  const isSel = selected === task;
-  const lift = isSel ? 0.35 : 0;
   const initPos = useInitial(target);
   const initScale = useInitial<[number, number, number]>([1, height, 1]);
   const spring = useRef(new Spring3());
@@ -293,7 +275,7 @@ function Dish({
     const far = Math.min(1.4, Math.hypot(target[0] - node.position.x, target[2] - node.position.z) * 0.5);
     node.position.x = smoothDamp(node.position.x, target[0], s.vx, 0.42, dt);
     node.position.z = smoothDamp(node.position.z, target[2], s.vz, 0.42, dt);
-    node.position.y = smoothDamp(node.position.y, target[1] + far + lift, s.vy, 0.24, dt);
+    node.position.y = smoothDamp(node.position.y, target[1] + far, s.vy, 0.24, dt);
     if (play.t !== null && cook) {
       // playback: the tower grows while the order cooks and is absent before it starts
       const done = Math.min(Math.max(play.t - cook.start, 0), cook.finish - cook.start);
@@ -308,19 +290,14 @@ function Dish({
     b.position.y = b.scale.y / 2;
   });
 
-  const onClick = (e: ThreeEvent<MouseEvent>) => {
-    if (!scene.interactive) return;
-    e.stopPropagation();
-    setSelected(isSel ? null : task);
-  };
   const p = stats.byTask.get(task);
   const t = TASKS[task];
-  const glow = focus || isSel || hover;
+  const glow = focus || hover;
 
   return (
     <group ref={g} position={initPos}>
       <group ref={body} scale={initScale}>
-        <mesh onClick={onClick} onPointerOver={(e) => (e.stopPropagation(), setHover(true))} onPointerOut={() => setHover(false)}>
+        <mesh onPointerOver={(e) => (e.stopPropagation(), setHover(true))} onPointerOut={() => setHover(false)}>
           <cylinderGeometry args={[DISH_R, DISH_R * 0.94, 1, 22]} />
           <Toon color={color} emissive={glow ? '#ffffff' : '#000'} emissiveIntensity={glow ? 0.28 : 0} />
         </mesh>
@@ -329,7 +306,7 @@ function Dish({
           <Toon color={placed ? shade(color, -0.15) : '#c9a96e'} />
         </mesh>
       </group>
-      {(hover || focus || isSel) && (
+      {(hover || focus) && (
         <Label position={[0, height + 0.3, 0]} center style={{ pointerEvents: 'none' }}>
           <div className="tooltip k-tip">
             <div className="tt-title">Pesanan #{task}</div>
@@ -376,7 +353,7 @@ function TimeLines({ k }: { k: number }) {
   const yL = PASS_TOP + LAB_LB * k;
   const yT = PASS_TOP + run.bestMakespan * k;
   const matchesHmmga = stats.makespan <= run.bestMakespan + 1e-6;
-  const showTarget = scene.interactive && !matchesHmmga;
+  const showTarget = scene.target && !matchesHmmga;
   const m = useRef<THREE.Group>(null);
   const initM = useInitial<[number, number, number]>([0, yM, PASS_Z]);
   const mv = useRef({ v: 0 });
@@ -395,7 +372,7 @@ function TimeLines({ k }: { k: number }) {
           <Label position={[w / 2, 0, 0]} style={{ pointerEvents: 'none' }}>
             <div className="line-tag red" style={{ transform: 'translate(-100%, -125%)' }}>
               ⏰ makespan {fmtS(stats.makespan)}
-              {scene.interactive && matchesHmmga && <span className="ok"> ✓ setara HMMGA</span>}
+              {scene.target && matchesHmmga && <span className="ok"> ✓ jadwal HMMGA</span>}
             </div>
           </Label>
         )}

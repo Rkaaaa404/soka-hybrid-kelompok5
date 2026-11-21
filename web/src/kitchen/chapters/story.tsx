@@ -2,13 +2,13 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ALGO_COLOR, SCALES, fmt } from '../../data/meta';
 import { useSnapshots } from '../../data/results';
 import { hybridWinner, mean } from '../../data/verdict';
-import { DEFAULT_LAB_PARAMS, candidateTasks, type HmmgaRun } from '../../sim/hmmga';
+import { DEFAULT_LAB_PARAMS, candidateTasks } from '../../sim/hmmga';
 import { CHEF_COLORS, CHEF_NAMES, CHEF_ROLE, LAB_LB, LAB_LB_PARTS, TASKS, VMS, fmtS, roundRobin } from '../model';
 import { COLOR_A, COLOR_B, COLOR_CHILD, GA_PHASES, breed, recordMoments, spotlight } from '../three/PlanningRoom';
 import { useKitchen, type Scene } from '../store';
 import { ChefLegend, Cite, Dock, GeneRuler, GeneStrip, Pipeline, Player, SeedPicker, Sparkline, TimePlay, usePlayer } from '../ui';
 
-const BASE: Partial<Scene> = { focusTask: null, focusVm: null, interactive: false, celebrate: false };
+const BASE: Partial<Scene> = { focusTask: null, focusVm: null, target: false, celebrate: false };
 
 const MEMBERS = [
   ['5027241002', 'Balqis Sani Sabillah'],
@@ -138,22 +138,12 @@ export function Selection() {
   );
 }
 
-const samePlan = (a: number[], b: number[]) => a.length === b.length && a.every((v, i) => v === b[i]);
-
-/** Where the plan shown in the kitchen came from, so the scoreboard can say what "now" is. */
-function planOrigin(plan: number[], run: HmmgaRun): string {
-  if (samePlan(plan, run.best)) return 'jadwal HMMGA';
-  if (samePlan(plan, run.maxMin.assignedVm)) return 'jadwal Max-Min';
-  if (samePlan(plan, roundRobin())) return 'Round Robin, titik awal';
-  return 'jadwal editanmu';
-}
-
 /**
- * Makespan scoreboard for the challenge: one time axis with fixed reference marks (lower bound, HMMGA, Max-Min,
- * Round Robin) and one moving pin for the plan currently shown in the kitchen.
+ * Makespan scoreboard: one time axis with fixed reference marks (lower bound, HMMGA, Max-Min, Round Robin) and one
+ * moving pin for the schedule currently shown in the kitchen.
  */
-function ScoreBoard({ compact = false }: { compact?: boolean }) {
-  const { stats, run, ev, scene, seed } = useKitchen();
+function ScoreBoard({ name, compact = false }: { name: string; compact?: boolean }) {
+  const { stats, run, ev, seed } = useKitchen();
   const rr = useMemo(() => ev.makespan(roundRobin()), [ev]);
   const hmmga = run.bestMakespan;
   const now = stats.makespan;
@@ -177,7 +167,7 @@ function ScoreBoard({ compact = false }: { compact?: boolean }) {
       <div className="sb-ladder">
         {/* the label slides with the pin but stays inside the box: shift it left by the same percentage */}
         <div className="sb-now" style={{ left: `${pct(now)}%`, transform: `translateX(-${pct(now)}%)` }}>
-          Dapur sekarang <b style={{ color: pinColor }}>{fmtS(now)}</b> <em>{planOrigin(scene.plan, run)}</em>
+          Yang tampil <b style={{ color: pinColor }}>{fmtS(now)}</b> <em>{name}</em>
         </div>
         <div className="sb-axis">
           {marks.map((m) => (
@@ -200,12 +190,10 @@ function ScoreBoard({ compact = false }: { compact?: boolean }) {
       </ul>
       {!compact && (
         <dl className="sb-defs">
-          <dt>Dapur sekarang</dt>
-          <dd>jadwal yang sedang terlihat di dapur 3D. Angkanya berubah setiap kali kamu memindah rantang atau menekan tombol jadwal di bawah.</dd>
-          <dt>Round Robin</dt>
-          <dd>titik awal tantangan: pesanan dibagi bergiliran tanpa melihat kecepatan koki.</dd>
-          <dt>Max-Min · HMMGA</dt>
-          <dd>jadwal hasil algoritma untuk 30 pesanan yang sama (HMMGA seed {seed}).</dd>
+          <dt>Yang tampil</dt>
+          <dd>makespan jadwal yang sedang terlihat di dapur 3D (pilih lewat tab di atas).</dd>
+          <dt>Round Robin · Max-Min · HMMGA</dt>
+          <dd>tiga cara membagi 30 pesanan yang sama ke 5 koki yang sama (HMMGA seed {seed}).</dd>
           <dt>Batas tercepat</dt>
           <dd>
             tidak ada jadwal yang bisa lebih cepat, bahkan jika seluruh {LAB_LB_PARTS.mips.toLocaleString('id-ID')} MIPS dapur bekerja tanpa jeda sejak
@@ -217,116 +205,67 @@ function ScoreBoard({ compact = false }: { compact?: boolean }) {
   );
 }
 
-interface Hint {
-  task: number;
-  from: number;
-  to: number;
-  after: number;
-}
-
-/** Best single move out of the bottleneck chef (≤ 30 × 5 evaluations), or null when no move helps. */
-function findHint(plan: number[], src: number, before: number, makespan: (p: number[]) => number): Hint | null {
-  let best: Hint | null = null;
-  plan.forEach((v, t) => {
-    if (v !== src) return;
-    for (let to = 0; to < VMS.length; to++) {
-      if (to === src) continue;
-      const p = [...plan];
-      p[t] = to;
-      const after = makespan(p);
-      if (after < before - 1e-6 && (!best || after < best.after - 1e-6)) best = { task: t, from: src, to, after };
-    }
-  });
-  return best;
-}
-
 export function KitchenIntro() {
-  const { setScene, run, stats, selected, setSelected, ev, scene } = useKitchen();
-  useEffect(() => setScene({ ...BASE, plan: roundRobin(), interactive: true, ga: null }), [setScene]);
-  const [hint, setHint] = useState<Hint | 'none' | null>(null);
-  useEffect(() => setHint(null), [scene.plan]);
+  const { setScene, run, stats, ev } = useKitchen();
+  const [view, setView] = useState(0);
+  // three ways to split the same 30 orders over the same 5 chefs (memoised so the scene effect runs once per tab)
+  const schedules = useMemo(
+    () => [
+      { name: 'Round Robin', plan: roundRobin(), desc: 'Pesanan dibagi bergiliran ke koki 1, 2, 3, 4, 5, 1, … tanpa melihat kecepatan koki.' },
+      { name: 'Max-Min', plan: run.maxMin.assignedVm, desc: 'Pesanan terberat lebih dulu, diberikan ke koki yang paling cepat menyelesaikannya. Ini tahap 1 HMMGA.' },
+      { name: 'HMMGA', plan: run.best, desc: 'Jadwal Max-Min yang diperbaiki oleh GA dan migrasi beban (tahap 2 dan 3, dibahas di bab berikutnya).' },
+    ],
+    [run],
+  );
+  useEffect(() => setScene({ ...BASE, plan: schedules[view].plan, target: true, celebrate: view === 2, ga: null }), [view, schedules, setScene]);
+  const ms = useMemo(() => schedules.map((s) => ev.makespan(s.plan)), [schedules, ev]);
+  const cur = schedules[view];
   const hmmga = run.bestMakespan;
-  const beat = stats.makespan <= hmmga + 1e-6;
-  const ratio = stats.makespan / hmmga;
-  const showHint = () => {
-    const h = findHint(scene.plan, stats.bottleneck, stats.makespan, (p) => ev.makespan(p));
-    setHint(h ?? 'none');
-    if (h) {
-      setSelected(h.task);
-      setScene({ focusVm: h.to });
-    }
-  };
-  const applyPlan = (plan: number[]) => {
-    setSelected(null);
-    setScene({ plan, focusVm: null });
-  };
+  const bottleneck = <b style={{ color: CHEF_COLORS[stats.bottleneck] }}>{CHEF_NAMES[stats.bottleneck]}</b>;
   return (
     <>
       <p className="eyebrow">Dapur = datacenter</p>
-      <h2>Coba jadi manajernya dulu</h2>
+      <h2>Cara membagi pesanan menentukan makespan</h2>
       <p className="lead">
-        Ini satu host dari CloudSim yang dijadikan dapur: 5 koki (VM) dengan kecepatan berbeda dan 30 pesanan GoCJ asli. Tugas manajer: membagi pesanan supaya{' '}
-        <b>pesanan terakhir selesai secepat mungkin</b>. Waktu itulah yang disebut makespan.
+        Ini satu host dari CloudSim yang dijadikan dapur: 5 koki (VM) dengan kecepatan berbeda dan 30 pesanan GoCJ asli. Tugas manajer (scheduler) adalah
+        membagi pesanan supaya <b>pesanan terakhir selesai secepat mungkin</b>. Waktu itulah yang disebut <b>makespan</b>.
       </p>
-      <div className="callout">
-        Dapur dimulai dengan <b>Round Robin</b>: pesanan dibagi bergiliran tanpa melihat kecepatan koki, sehingga pesanan besar menumpuk di koki junior yang
-        paling lambat.
-        <br />
-        <b>Tantangan:</b> klik sebuah rantang, lalu klik kompor koki tujuan. Bisakah kamu menyamai HMMGA ({fmtS(hmmga)})?
-        {selected !== null && <div className="sel">Pesanan #{selected} dipilih ({Math.round(TASKS[selected].lengthMi / 1000)}k MI) → klik kompor tujuan</div>}
-      </div>
-      <Dock
-        caption={
-          selected !== null ? (
-            <>
-              Pesanan <b>#{selected}</b> dipilih → klik kompor koki tujuan
-            </>
-          ) : (
-            'Tantangan: klik rantang, lalu klik kompor koki tujuan'
-          )
-        }
-      >
-        <ScoreBoard />
-        {beat ? (
-          <p className="win-msg">🎉 Jadwal di dapur setara HMMGA. Sekarang bayangkan melakukannya untuk 10.000 pesanan dan 50 koki.</p>
-        ) : (
-          <p className="sb-verdict">
-            Masih <b>{fmtS(stats.makespan - hmmga)}</b> ({fmt(ratio, 1)}×) lebih lama daripada HMMGA. Paling lama:{' '}
-            <b style={{ color: CHEF_COLORS[stats.bottleneck] }}>{CHEF_NAMES[stats.bottleneck]}</b> (bendera merah). Pindahkan rantangnya ke koki yang selesai
-            lebih awal.
-          </p>
-        )}
-        {hint && hint !== 'none' && (
-          <p className="hint-msg">
-            💡 Pindahkan pesanan <b>#{hint.task}</b> ({Math.round(TASKS[hint.task].lengthMi / 1000)}k MI) dari{' '}
-            <b style={{ color: CHEF_COLORS[hint.from] }}>{CHEF_NAMES[hint.from]}</b> ke <b style={{ color: CHEF_COLORS[hint.to] }}>{CHEF_NAMES[hint.to]}</b>:
-            makespan {fmtS(stats.makespan)} → <b>{fmtS(hint.after)}</b>. Rantangnya sudah dipilih, tinggal klik kompor koki yang bercincin.
-          </p>
-        )}
-        {hint === 'none' && (
-          <p className="hint-msg">
-            💡 Tidak ada satu pindahan dari koki bendera merah yang memperbaiki makespan (optimum lokal). Coba tukar dua pesanan antarkoki, atau lihat jadwal
-            Max-Min.
-          </p>
-        )}
+      <Dock caption={<>Jadwal di dapur: <b>{cur.name}</b> · makespan {fmtS(stats.makespan)}</>}>
+        <div className="stage-tabs">
+          {schedules.map((s, i) => (
+            <button key={s.name} aria-pressed={view === i} onClick={() => setView(i)}>
+              <span className="n">{i + 1}</span>
+              {s.name}
+              <b>{fmtS(ms[i])}</b>
+            </button>
+          ))}
+        </div>
+        <ScoreBoard name={cur.name} />
         <div className="btn-row">
-          <button className="btn primary" onClick={showHint} disabled={beat}>
-            💡 Petunjuk
-          </button>
           <TimePlay />
         </div>
-        <div className="btn-row">
-          <button className="btn" onClick={() => applyPlan(roundRobin())}>
-            Ulang dari Round Robin
-          </button>
-          <button className="btn" onClick={() => applyPlan(run.maxMin.assignedVm)}>
-            Pakai Max-Min · {fmtS(run.maxMinMakespan)}
-          </button>
-          <button className="btn" onClick={() => applyPlan(run.best)}>
-            Pakai HMMGA · {fmtS(hmmga)}
-          </button>
-        </div>
       </Dock>
+      <div className="callout">
+        <b>{cur.name}</b>: {cur.desc}
+        <br />
+        {view === 0 && (
+          <>
+            Pesanan besar ikut jatuh ke koki junior yang paling lambat, sehingga {bottleneck} (bendera merah) baru selesai di {fmtS(stats.makespan)},{' '}
+            <b>{fmt(stats.makespan / hmmga, 1)}×</b> lebih lama daripada HMMGA.
+          </>
+        )}
+        {view === 1 && (
+          <>
+            Makespan turun ke {fmtS(stats.makespan)}. Koki paling lama kini {bottleneck}, masih {fmtS(stats.makespan - hmmga)} di atas HMMGA.
+          </>
+        )}
+        {view === 2 && (
+          <>
+            Makespan {fmtS(stats.makespan)}, hanya {fmtS(stats.makespan - LAB_LB)} di atas batas tercepat. Bab 4–6 membahas bagaimana HMMGA sampai ke jadwal
+            ini.
+          </>
+        )}
+      </div>
       <h3 className="sub">Cara membaca dapur</h3>
       <ul className="clean bullets small">
         <li>

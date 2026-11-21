@@ -132,7 +132,6 @@ ul.verdict li.bad::before { background: #ff6b6f !important; }
 .sb-defs dt { font-weight: 600; color: var(--text-primary); white-space: nowrap; }
 .sb-defs dd { margin: 0; color: var(--text-muted); }
 .sb-verdict { font-size: 13.5px; margin: 8px 0; color: var(--text-secondary); }
-.hint-msg { font-size: 13px; margin: 6px 0; padding: 8px 10px; border-radius: 10px; background: rgba(240, 180, 41, 0.1); border: 1px solid rgba(240, 180, 41, 0.35); color: var(--text-secondary); }
 .btn.play-btn[aria-pressed='true'] { background: rgba(255, 255, 255, 0.14); }
 .dock .scoreboard { min-width: min(560px, calc(100vw - 60px)); }
 .dock .sb-defs, .dock .sb-head span { display: none; }
@@ -363,7 +362,6 @@ table.data tr.hl td { background: rgba(240, 180, 41, 0.14); }
 .chef-tag b { font: 600 12px/1.2 var(--font-display); }
 .chef-tag span { color: var(--text-muted); font-size: 10px; }
 .chef-tag.on { transform: scale(1.12); border-color: var(--c); box-shadow: 0 0 18px var(--c); }
-.chef-tag.drop { border-style: dashed; border-color: var(--gold); }
 /* tags on the time lines sit over colourful towers: solid backing, bigger type, colour carried by the border */
 .line-tag {
   font: 700 13px/1 var(--font-mono); padding: 6px 10px; border-radius: 8px; white-space: nowrap; transform: translateY(-50%);

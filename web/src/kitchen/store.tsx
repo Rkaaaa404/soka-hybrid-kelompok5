@@ -21,7 +21,8 @@ export interface Scene {
   plan: number[]; // VM per task, -1 = order still waiting on the board
   focusTask: number | null;
   focusVm: number | null;
-  interactive: boolean;
+  /** draw the dashed HMMGA target line over the towers (schedule comparison chapter) */
+  target: boolean;
   ga: GaView | null;
   arena: ArenaView;
   celebrate: boolean;
@@ -36,8 +37,6 @@ interface Kitchen {
   ev: Evaluator;
   scene: Scene;
   setScene: (patch: Partial<Scene>) => void;
-  selected: number | null;
-  setSelected: (t: number | null) => void;
   stats: ReturnType<typeof planStats>;
   panelOpen: boolean;
   setPanelOpen: (open: boolean) => void;
@@ -78,12 +77,11 @@ export function KitchenProvider({ children }: { children: ReactNode }) {
     plan: run.best,
     focusTask: null,
     focusVm: null,
-    interactive: false,
+    target: false,
     ga: null,
     arena: { scale: 5000, mode: 'makespan', algos: ALL_ALGOS },
     celebrate: false,
   }));
-  const [selected, setSelected] = useState<number | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
   const [panelSize, setPanelSize] = useState<PanelSize>('normal');
 
@@ -91,7 +89,6 @@ export function KitchenProvider({ children }: { children: ReactNode }) {
   const go = useCallback((n: number) => {
     const next = Math.min(Math.max(n, 0), CHAPTER_COUNT - 1);
     setChapter(next);
-    setSelected(null);
     history.replaceState(null, '', `#bab-${next + 1}`);
   }, []);
 
@@ -126,8 +123,6 @@ export function KitchenProvider({ children }: { children: ReactNode }) {
       ev,
       scene,
       setScene,
-      selected,
-      setSelected,
       stats,
       panelOpen,
       setPanelOpen,
@@ -138,7 +133,7 @@ export function KitchenProvider({ children }: { children: ReactNode }) {
       startPlayback,
       stopPlayback,
     }),
-    [chapter, go, seed, run, ev, scene, setScene, selected, stats, panelOpen, panelSize, clock, playing, startPlayback, stopPlayback],
+    [chapter, go, seed, run, ev, scene, setScene, stats, panelOpen, panelSize, clock, playing, startPlayback, stopPlayback],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
